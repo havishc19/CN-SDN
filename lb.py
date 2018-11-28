@@ -129,7 +129,7 @@ class LoadBalancer:
 
 		srcSwitchDPID = int(self.switchIDMap[self.h2].split(":")[7], 16)
 		dstSwitchDPID = int(self.switchIDMap[self.h1].split(":")[7], 16)
-		for path in nx.all_shortest_paths(self.G, source = srcSwitchDPID, target = dstSwitchDPID, weight = None):
+		for path in nx.all_shortest_paths(self.G, source = srcSwitchDPID, target = dstSwitchDPID):
 			switchDPIDs = self.convertToHex(path)
 			pathID = ""
 			tempPath = []
@@ -195,7 +195,7 @@ class LoadBalancer:
 
 	def addRule(self, currentNode, src, dst, inPort, outPort):
 
-		print("Adding Rule: ", currentNode, src, dst, inPort, outPort)
+		# print("Adding Rule: ", currentNode, src, dst, inPort, outPort)
 
 		flow = {
 				'switch':"00:00:00:00:00:00:00:" + currentNode,
@@ -268,10 +268,20 @@ class LoadBalancer:
 				self.addRule(currNodeDPID, self.h1, self.h2, outPort, inPort)
 				# self.count += 2
 				prevNode = currNodeDPID
+		print("Done adding rule for path %s" %(shortestPath))
 
 
 
-
+def printPaths(paths):
+	counter = 1
+	for i in paths:
+		print("Path %s; Path ID: %s" %(str(counter), i))
+		temp = ""
+		for path in paths[i]:
+			temp = temp + path + "->"
+		temp = temp[:-2]
+		print(temp)
+		counter += 1
 
 def main():
 	h1 = ""
@@ -297,7 +307,7 @@ def main():
 		lb.findCommonLinks()
 		lb.findSwitchRoute()
 		lb.getLinkCost()
-		lb.addFlow()
+		
 		print("====================== Iteration %s =====================" %str(i))
 
 		# Print Switch To Which H4 is Connectedk
@@ -314,14 +324,15 @@ def main():
 		# print "\nLink Ports (SRC::DST - SRC PORT::DST PORT)\n\n", self.linkPortMap
 
 		# Alternate Paths
-		print("Possible Paths: ", lb.path)
+		printPaths(lb.path)
 
 		# Final Link Cost
 		print("Past Costs: ", lb.pathCost)
+		lb.addFlow()
 
-		print "=========================================================================="
+		print "==========================================================================\n\n"
 
-		time.sleep(5)
+		time.sleep(10)
 
 if __name__ == "__main__":
 	main()
