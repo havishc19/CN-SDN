@@ -5,177 +5,84 @@ import json
 import unicodedata
 from subprocess import Popen, PIPE
 import time
-import networkx as nx
 from sys import exit
-
-def getResponse(url,choice):
-
-	response = requests.get(url)
-
-	if(response.ok):
-		jData = json.loads(response.content)
-		if(choice=="deviceInfo"):
-			deviceInformation(jData)
-		elif(choice=="findSwitchLinks"):
-			findSwitchLinks(jData,switch[h2])
-		
-	else:
-		response.raise_for_status()
-
-def findSwitchLinks(data,s):
-	global switchLinks
-	global linkPorts
-	global G
-
-	links=[]
-	for i in data:
-		src = i['src-switch'].encode('ascii','ignore')
-		dst = i['dst-switch'].encode('ascii','ignore')
-
-		srcPort = str(i['src-port'])
-		dstPort = str(i['dst-port'])
-
-		srcTemp = src.split(":")[7]
-		dstTemp = dst.split(":")[7]
-
-		G.add_edge(int(srcTemp,16), int(dstTemp,16))
-
-		tempSrcToDst = srcTemp + "::" + dstTemp
-		tempDstToSrc = dstTemp + "::" + srcTemp
-
-		portSrcToDst = str(srcPort) + "::" + str(dstPort)
-		portDstToSrc = str(dstPort) + "::" + str(srcPort)
-
-		linkPorts[tempSrcToDst] = portSrcToDst
-		linkPorts[tempDstToSrc] = portDstToSrc
-
-		if (src==s):
-			links.append(dst)
-		elif (dst==s):
-			links.append(src)
-		else:
-			continue
-
-	switchID = s.split(":")[7]
-	switchLinks[switchID]=links
-
-def deviceInformation(data):
-	global switch
-	global deviceMAC
-	global hostPorts
-	switchDPID = ""
-	for i in data:
-		if(i['ipv4']):
-			ip = i['ipv4'][0].encode('ascii','ignore')
-			mac = i['mac'][0].encode('ascii','ignore')
-			deviceMAC[ip] = mac
-			for j in i['attachmentPoint']:
-				for key in j:
-					temp = key.encode('ascii','ignore')
-					if(temp=="switchDPID"):
-						switchDPID = j[key].encode('ascii','ignore')
-						switch[ip] = switchDPID
-					elif(temp=="port"):
-						portNumber = j[key]
-						switchShort = switchDPID.split(":")[7]
-						hostPorts[ip+ "::" + switchShort] = str(portNumber)
+import argparse
 
 def systemCommand(cmd):
 	terminalProcess = Popen(cmd, stdout=PIPE, stderr=PIPE, shell=True)
 	terminalOutput, stderr = terminalProcess.communicate()
 	print "\n***", terminalOutput, "\n"
 
-
-
-def flowRule():
-	inp = {
-		"src_ip" : "10.0.0.1",
-		"dst_ip" : "10.0.0.3",
-		"src_port" : "80",
-		"dst_port" : "300",
-		"priority" : ""
-		}
-
-	flow = {
-			"ipv4_src":"10.0.0.1" ,
-
-			"out_port":"6000",
-
-			"ipv4_dst":"10.0.0.3",
-		
+def add_firewall_rule(inp_dict, switches):
+	if inp_dict["allow"]=="0":
+		flow = {
+			"ipv4_src": inp_dict["src_ip"] ,
+			"out_port": inp_dict["src_port"],
+			"ipv4_dst":	inp_dict["dst_ip"],
+			"in_port": inp_dict["dst_port"],
 			"name":"", 
-
 			"switch":"",
-		
-			"priority":"32768",
-	    
-	    	'switch':"",
-	    
+			"priority": inp_dict["allow"],
 	    	"eth_type": "0x0800",
-	  	
-	  		"actions":"DROP",
-
+	  		"actions":"output=normal",
 	    	"active":"true",
 	    	}
 
-	for i in range(1,9):
-		flow["switch"] = str(i)
-		flow["name"] = "flow"+str(i)
-		jsonData = json.dumps(flow)
+		for key in flow.keys():
+			if (flow[key] == "" or flow[key] is None) and (key not in ("name", "switch")):
+				del flow[key]
+
+		for switch in switches:
+			flow["switch"] = str(switch)
+			flow["name"] = "flow"+str(switch)
+			jsonData = json.dumps(flow)
 	
-	 	cmd = "curl -X POST -d \'"+ jsonData+"\' " +"http://127.0.0.1:8080/wm/staticflowpusher/json"
-	 	systemCommand(cmd)
+	 		cmd = "curl -X POST -d \'"+ jsonData+"\' " +"http://127.0.0.1:8080/wm/staticflowpusher/json"
+	 		systemCommand(cmd)
+	else:
+	 	flow = {
+			"ipv4_src": inp_dict["src_ip"] ,
+			"out_port": inp_dict["src_port"],
+			"ipv4_dst":	inp_dict["dst_ip"],
+			"in_port": inp_dict["dst_port"],
+			"name":"", 
+			"switch":"",
+			"priority": inp_dict["allow"],
+	    	"eth_type": "0x0800",
+	  		
+	    	"active":"true",
+	    	}
+
+		for key in flow.keys():
+			if (flow[key] =="" or flow[key] is None) and (key not in ("name", "switch")):
+				del flow[key]
+
+		for switch in switches:
+			flow["switch"] = str(switch)
+			flow["name"] = "flow"+str(switch)
+			jsonData = json.dumps(flow)
+	
+	 		cmd = "curl -X POST -d \'"+ jsonData+"\' " +"http://127.0.0.1:8080/wm/staticflowpusher/json"
+	 		systemCommand(cmd)
 
 
+def getSwitchIds():
+	switchIDs = []
+	url = "http://localhost:8080/wm/core/controller/switches/json"
+	resp = requests.get(url)
+	switches = json.loads(resp.text)
+	for switch in switches:
+		switchIDs.append(switch["switchDPID"])
+	return switchIDs
 
-def sdn_firewall():
-	linkURL = "http://localhost:8080/wm/topology/links/json"
-	getResponse(linkURL,"findSwitchLinks")
-	flowRule()
-
-
-
-global h1,h2,h3
-
-h1 = ""
-h2 = ""
-
-print "Enter Host 1"
-h1 = int(input())
-print "\nEnter Host 2"
-h2 = int(input())
-print "\nEnter Host 3 (H2's Neighbour)"
-h3 = int(input())
-
-h1 = "10.0.0." + str(h1)
-h2 = "10.0.0." + str(h2)
-h3 = "10.0.0." + str(h3)
-
-
-while True:
-
-	switch = {}
-
-	# Mac of H3 And H4
-	deviceMAC = {}
-	hostPorts = {}
-
-
-	switchLinks = {}
-	linkPorts = {}
-	G = nx.Graph()
-
-	try:
-
-		deviceInfo = "http://localhost:8080/wm/device/"
-		getResponse(deviceInfo,"deviceInfo")
-
-		sdn_firewall()
-		time.sleep(60)
-
-	except KeyboardInterrupt:
-		break
-		exit()
-
-
-
+if __name__ == '__main__':
+	parser = argparse.ArgumentParser()
+	parser.add_argument('--src_ip', help='ipv4 for the source')
+	parser.add_argument('--dst_ip', help='ipv4 for the destination')
+	parser.add_argument('--src_port', help='tcp port for the source')
+	parser.add_argument('--dst_port', help='tcp port for the destination')
+	parser.add_argument('--allow')
+	args = parser.parse_args()
+	args = vars(args)
+	switches = getSwitchIds()
+	add_firewall_rule(args, switches)
