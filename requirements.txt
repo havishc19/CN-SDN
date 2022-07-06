@@ -3,7 +3,7 @@ argparse==1.2.1
 chardet==2.0.1
 colorama==0.2.5
 decorator==4.3.0
-html5lib==0.999
+html5lib==0.999999999
 mininet==2.2.1
 networkx==2.2
 pygobject==3.12.0
